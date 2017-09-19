@@ -1,0 +1,41 @@
+.PHONY: all clean test headers
+
+PKG_CONFIG=pkg-config
+LUA=lua
+
+LUA_CFLAGS=`$(PKG_CONFIG) --cflags lua5.2 2>/dev/null || $(PKG_CONFIG) --cflags lua`
+SOCFLAGS=`$(PKG_CONFIG) --libs lua5.2 2>/dev/null || $(PKG_CONFIG) --libs lua`
+CFLAGS=-O3 -Wall $(LUA_CFLAGS) -fvisibility=hidden -Wno-unused-function --std=gnu99 -D_CRT_SECURE_NO_DEPRECATE -DLUA_FFI_BUILD_AS_DLL
+
+MODNAME=ffi
+MODDLL=$(MODNAME).dll
+TESTDLL=libtest_cdecl.dll
+
+all: $(MODDLL) $(TESTDLL)
+
+headers:
+	$(MAKE) call_x86.h call_x64.h call_x64win.h
+
+test: $(TESTDLL) $(MODDLL)
+	LD_LIBRARY_PATH=./ $(LUA) test.lua
+
+clean:
+	rm -f *.o *.dll call_*.h
+
+call_x86.h: call_x86.dasc dynasm/*.lua
+	$(LUA) dynasm/dynasm.lua -LNE -D X32WIN -o $@ $<
+
+call_x64.h: call_x86.dasc dynasm/*.lua
+	$(LUA) dynasm/dynasm.lua -D X64 -LNE -o $@ $<
+
+call_x64win.h: call_x86.dasc dynasm/*.lua
+	$(LUA) dynasm/dynasm.lua -D X64 -D X64WIN -LNE -o $@ $<
+
+%.o: %.c *.h dynasm/*.h call_x86.h call_x64.h call_x64win.h
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+$(MODDLL): ffi.o ctype.o parser.o call.o
+	$(CC) -O -shared -o $@ $^ $(SOCFLAGS)
+
+$(TESTDLL): test.o
+	$(CC) -O -shared -o $@ $^ $(SOCFLAGS)
